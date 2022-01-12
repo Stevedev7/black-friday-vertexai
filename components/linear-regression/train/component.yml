@@ -1,0 +1,39 @@
+name: Linear regression train
+inputs:
+- {name: x_train_artifact, type: Artifact}
+- {name: y_train_artifact, type: Artifact}
+outputs:
+- {name: linear_regression_model, type: Model}
+implementation:
+  container:
+    image: python:3.8-slim
+    command:
+    - sh
+    - -c
+    - |2
+
+      if ! [ -x "$(command -v pip)" ]; then
+          python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip
+      fi
+
+      PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'pandas' 'sklearn' 'fsspec' 'gcsfs' 'kfp==1.8.9' && "$0" "$@"
+    - sh
+    - -ec
+    - |
+      program_path=$(mktemp -d)
+      printf "%s" "$0" > "$program_path/ephemeral_component.py"
+      python3 -m kfp.v2.components.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+    - "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing\
+      \ import *\n\ndef linear_regression_train(\n    x_train_artifact: Input[Artifact],\n\
+      \    y_train_artifact: Input[Artifact],\n    linear_regression_model: Output[Model]\n\
+      ):\n    import joblib\n    from pandas import read_csv\n    from sklearn.linear_model\
+      \ import LinearRegression\n\n    x_train = read_csv(x_train_artifact.uri)\n\
+      \    y_train = read_csv(y_train_artifact.uri)\n\n    linear_regressor = LinearRegression()\n\
+      \    linear_regressor.fit(x_train, y_train)\n\n    # with open(linear_regression_model.path,\
+      \ 'wb') as f:\n    #     pickle.dump(linear_regressor, f)    \n    with open(linear_regression_model.path,\
+      \ 'wb') as f:\n        joblib.dump(linear_regressor, f)\n\n"
+    args:
+    - --executor_input
+    - {executorInput: null}
+    - --function_to_execute
+    - linear_regression_train

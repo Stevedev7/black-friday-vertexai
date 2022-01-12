@@ -1,0 +1,72 @@
+name: Feature scale
+inputs:
+- {name: cleaned_data, type: Artifact}
+outputs:
+- {name: x_train_artifact, type: Artifact}
+- {name: y_train_artifact, type: Artifact}
+- {name: x_test_artifact, type: Artifact}
+- {name: y_test_artifact, type: Artifact}
+- {name: standard_scaler, type: Artifact}
+implementation:
+  container:
+    image: python:3.8-slim
+    command:
+    - sh
+    - -c
+    - |2
+
+      if ! [ -x "$(command -v pip)" ]; then
+          python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip
+      fi
+
+      PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'pandas' 'np' 'sklearn' 'fsspec' 'gcsfs' 'kfp==1.8.9' && "$0" "$@"
+    - sh
+    - -ec
+    - |
+      program_path=$(mktemp -d)
+      printf "%s" "$0" > "$program_path/ephemeral_component.py"
+      python3 -m kfp.v2.components.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+    - |2+
+
+      import kfp
+      from kfp.v2 import dsl
+      from kfp.v2.dsl import *
+      from typing import *
+
+      def feature_scale(
+          cleaned_data: Input[Artifact],
+          x_train_artifact: Output[Artifact],
+          y_train_artifact: Output[Artifact],
+          x_test_artifact: Output[Artifact],
+          y_test_artifact: Output[Artifact],
+          standard_scaler: Output[Artifact]
+      ):
+          from pickle import dump
+          from pandas import DataFrame, read_csv
+          from sklearn.preprocessing import StandardScaler
+          from sklearn.model_selection import train_test_split
+
+          df = read_csv(cleaned_data.uri)
+
+          x = df.iloc[:, :-1].values
+          y = df.iloc[:, -1].values
+
+          x_train, x_test, y_train, y_test = train_test_split(x, y, test_size = 0.2)
+
+          sc = StandardScaler()
+          x_train = sc.fit_transform(x_train)
+          x_test = sc.transform(x_test)
+
+          DataFrame(x_train).to_csv(x_train_artifact.uri, index=False)
+          DataFrame(y_train).to_csv(y_train_artifact.uri, index=False)
+          DataFrame(x_test).to_csv(x_test_artifact.uri, index=False)
+          DataFrame(y_test).to_csv(y_test_artifact.uri, index=False)
+
+          with open(standard_scaler.path, 'wb') as output_file:
+              dump(sc, output_file)
+
+    args:
+    - --executor_input
+    - {executorInput: null}
+    - --function_to_execute
+    - feature_scale

@@ -5,3 +5,5 @@
 .ipython
 .jupyter
 .local
+.bash_history
+.gitconfig

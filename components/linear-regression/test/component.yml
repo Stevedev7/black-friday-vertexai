@@ -1,0 +1,60 @@
+name: Linear regression test
+inputs:
+- {name: linear_regression_model, type: Model}
+- {name: x_test_artifact, type: Artifact}
+- {name: y_test_artifact, type: Artifact}
+outputs:
+- {name: evaluation, type: String}
+implementation:
+  container:
+    image: python:3.8-slim
+    command:
+    - sh
+    - -c
+    - |2
+
+      if ! [ -x "$(command -v pip)" ]; then
+          python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip
+      fi
+
+      PIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'pandas' 'sklearn' 'fsspec' 'gcsfs' 'kfp==1.8.9' && "$0" "$@"
+    - sh
+    - -ec
+    - |
+      program_path=$(mktemp -d)
+      printf "%s" "$0" > "$program_path/ephemeral_component.py"
+      python3 -m kfp.v2.components.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+    - |2+
+
+      import kfp
+      from kfp.v2 import dsl
+      from kfp.v2.dsl import *
+      from typing import *
+
+      def linear_regression_test(
+          linear_regression_model: Input[Model],
+          x_test_artifact: Input[Artifact],
+          y_test_artifact: Input[Artifact]
+      )-> NamedTuple("Outputs", [("evaluation", str)]):
+          import joblib
+          from pandas import read_csv
+          from sklearn.metrics import mean_squared_error, mean_absolute_error
+
+          # with open(linear_regression_model.path, 'rb') as f:
+          linear_regressor = joblib.load(linear_regression_model.path)
+          x_test = read_csv(args.x_test)
+          y_test = read_csv(args.y_test)
+
+          y_pred = linear_regressor.predict(x_test)
+
+          mae = mean_absolute_error(y_pred, y_test)
+          mse = mean_squared_error(y_pred, y_test)
+          output_accuracy = f"\nLinear Regression\nMean Absolute Error: {mae}\nMean Squared Error: {mse}\n"
+
+          return(output_accuracy,)
+
+    args:
+    - --executor_input
+    - {executorInput: null}
+    - --function_to_execute
+    - linear_regression_test

@@ -1,0 +1,406 @@
+{
+  "pipelineSpec": {
+    "components": {
+      "comp-clean-data": {
+        "executorLabel": "exec-clean-data",
+        "inputDefinitions": {
+          "artifacts": {
+            "dataset": {
+              "artifactType": {
+                "schemaTitle": "system.Dataset",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          }
+        },
+        "outputDefinitions": {
+          "artifacts": {
+            "cleaned_data": {
+              "artifactType": {
+                "schemaTitle": "system.Artifact",
+                "schemaVersion": "0.0.1"
+              }
+            },
+            "column_transformer": {
+              "artifactType": {
+                "schemaTitle": "system.Artifact",
+                "schemaVersion": "0.0.1"
+              }
+            },
+            "label_encoder": {
+              "artifactType": {
+                "schemaTitle": "system.Artifact",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          }
+        }
+      },
+      "comp-feature-scale": {
+        "executorLabel": "exec-feature-scale",
+        "inputDefinitions": {
+          "artifacts": {
+            "cleaned_data": {
+              "artifactType": {
+                "schemaTitle": "system.Artifact",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          }
+        },
+        "outputDefinitions": {
+          "artifacts": {
+            "standard_scaler": {
+              "artifactType": {
+                "schemaTitle": "system.Artifact",
+                "schemaVersion": "0.0.1"
+              }
+            },
+            "x_test_artifact": {
+              "artifactType": {
+                "schemaTitle": "system.Artifact",
+                "schemaVersion": "0.0.1"
+              }
+            },
+            "x_train_artifact": {
+              "artifactType": {
+                "schemaTitle": "system.Artifact",
+                "schemaVersion": "0.0.1"
+              }
+            },
+            "y_test_artifact": {
+              "artifactType": {
+                "schemaTitle": "system.Artifact",
+                "schemaVersion": "0.0.1"
+              }
+            },
+            "y_train_artifact": {
+              "artifactType": {
+                "schemaTitle": "system.Artifact",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          }
+        }
+      },
+      "comp-get-data": {
+        "executorLabel": "exec-get-data",
+        "outputDefinitions": {
+          "artifacts": {
+            "dataset": {
+              "artifactType": {
+                "schemaTitle": "system.Dataset",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          }
+        }
+      },
+      "comp-linear-regression-test": {
+        "executorLabel": "exec-linear-regression-test",
+        "inputDefinitions": {
+          "artifacts": {
+            "linear_regression_model": {
+              "artifactType": {
+                "schemaTitle": "system.Model",
+                "schemaVersion": "0.0.1"
+              }
+            },
+            "x_test_artifact": {
+              "artifactType": {
+                "schemaTitle": "system.Artifact",
+                "schemaVersion": "0.0.1"
+              }
+            },
+            "y_test_artifact": {
+              "artifactType": {
+                "schemaTitle": "system.Artifact",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          }
+        },
+        "outputDefinitions": {
+          "parameters": {
+            "evaluation": {
+              "type": "STRING"
+            }
+          }
+        }
+      },
+      "comp-linear-regression-train": {
+        "executorLabel": "exec-linear-regression-train",
+        "inputDefinitions": {
+          "artifacts": {
+            "x_train_artifact": {
+              "artifactType": {
+                "schemaTitle": "system.Artifact",
+                "schemaVersion": "0.0.1"
+              }
+            },
+            "y_train_artifact": {
+              "artifactType": {
+                "schemaTitle": "system.Artifact",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          }
+        },
+        "outputDefinitions": {
+          "artifacts": {
+            "linear_regression_model": {
+              "artifactType": {
+                "schemaTitle": "system.Model",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          }
+        }
+      }
+    },
+    "deploymentSpec": {
+      "executors": {
+        "exec-clean-data": {
+          "container": {
+            "args": [
+              "--executor_input",
+              "{{$}}",
+              "--function_to_execute",
+              "clean_data"
+            ],
+            "command": [
+              "sh",
+              "-c",
+              "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'pandas' 'np' 'sklearn' 'fsspec' 'gcsfs' 'kfp==1.8.9' && \"$0\" \"$@\"\n",
+              "sh",
+              "-ec",
+              "program_path=$(mktemp -d)\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\npython3 -m kfp.v2.components.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+              "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing import *\n\ndef clean_data(\n    dataset: Input[Dataset],\n    cleaned_data: Output[Artifact],\n    column_transformer: Output[Artifact],\n    label_encoder: Output[Artifact]\n):\n    import numpy as np\n    import pandas as pd\n    from pickle import dump\n    from sklearn.impute import SimpleImputer\n    from sklearn.compose import ColumnTransformer\n    from sklearn.preprocessing import LabelEncoder, OneHotEncoder\n\n    df = pd.read_csv(dataset.uri)\n\n    # Split the data into independent and dependent variables and remove unnecessary columns\n    x = df.iloc[:, 2:-2].values\n    y = df.iloc[:, -1].values\n\n    #Encode Gender column\n    le = LabelEncoder()\n    x[:, 0] = le.fit_transform(x[:, 0])\n\n    # Fill NaN values in Product_Category_2 column \n    imputer = SimpleImputer(missing_values=np.nan, strategy='median')\n    x[:, 7] = imputer.fit_transform(x[:, 7].reshape(-1, 1)).reshape(1, -1)[0]\n\n    # Onehot encode the Age, City_Category, Stay_In_Current_City_Years columns\n    ct = ColumnTransformer(transformers=[('encoder', OneHotEncoder(), [1, 3, 4])], remainder='passthrough')\n    x = ct.fit_transform(x)\n\n    # Merge the dataset to pass it to the next component\n    x = pd.DataFrame(x)\n    y = pd.DataFrame(y)\n    data = pd.concat([x,y], axis=1)\n\n    # Write the data to a csv file\n    data.to_csv(path_or_buf=cleaned_data.path, index=False)\n\n    # Write the column transformer object into a file\n    with open(column_transformer.path, 'wb') as output_file:\n        dump(ct, output_file)\n\n    with open(label_encoder.path, 'wb') as output_file:\n        dump(le, output_file)\n\n"
+            ],
+            "image": "python:3.8-slim"
+          }
+        },
+        "exec-feature-scale": {
+          "container": {
+            "args": [
+              "--executor_input",
+              "{{$}}",
+              "--function_to_execute",
+              "feature_scale"
+            ],
+            "command": [
+              "sh",
+              "-c",
+              "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'pandas' 'np' 'sklearn' 'fsspec' 'gcsfs' 'kfp==1.8.9' && \"$0\" \"$@\"\n",
+              "sh",
+              "-ec",
+              "program_path=$(mktemp -d)\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\npython3 -m kfp.v2.components.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+              "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing import *\n\ndef feature_scale(\n    cleaned_data: Input[Artifact],\n    x_train_artifact: Output[Artifact],\n    y_train_artifact: Output[Artifact],\n    x_test_artifact: Output[Artifact],\n    y_test_artifact: Output[Artifact],\n    standard_scaler: Output[Artifact]\n):\n    from pickle import dump\n    from pandas import DataFrame, read_csv\n    from sklearn.preprocessing import StandardScaler\n    from sklearn.model_selection import train_test_split\n\n    df = read_csv(cleaned_data.uri)\n\n    x = df.iloc[:, :-1].values\n    y = df.iloc[:, -1].values\n\n    x_train, x_test, y_train, y_test = train_test_split(x, y, test_size = 0.2)\n\n    sc = StandardScaler()\n    x_train = sc.fit_transform(x_train)\n    x_test = sc.transform(x_test)\n\n    DataFrame(x_train).to_csv(x_train_artifact.uri, index=False)\n    DataFrame(y_train).to_csv(y_train_artifact.uri, index=False)\n    DataFrame(x_test).to_csv(x_test_artifact.uri, index=False)\n    DataFrame(y_test).to_csv(y_test_artifact.uri, index=False)\n\n    with open(standard_scaler.path, 'wb') as output_file:\n        dump(sc, output_file)\n\n"
+            ],
+            "image": "python:3.8-slim"
+          }
+        },
+        "exec-get-data": {
+          "container": {
+            "args": [
+              "--executor_input",
+              "{{$}}",
+              "--function_to_execute",
+              "get_data"
+            ],
+            "command": [
+              "sh",
+              "-c",
+              "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'pandas' 'fsspec' 'gcsfs' 'kfp==1.8.9' && \"$0\" \"$@\"\n",
+              "sh",
+              "-ec",
+              "program_path=$(mktemp -d)\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\npython3 -m kfp.v2.components.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+              "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing import *\n\ndef get_data(\n    dataset: Output[Dataset]\n):\n    from pandas import read_csv\n\n    df = read_csv('gs://black-friday-demo-bucket/dataset/train.csv')\n\n    df.to_csv(dataset.uri, index=False)\n\n"
+            ],
+            "image": "python:3.8-slim"
+          }
+        },
+        "exec-linear-regression-test": {
+          "container": {
+            "args": [
+              "--executor_input",
+              "{{$}}",
+              "--function_to_execute",
+              "linear_regression_test"
+            ],
+            "command": [
+              "sh",
+              "-c",
+              "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'pandas' 'sklearn' 'fsspec' 'gcsfs' 'kfp==1.8.9' && \"$0\" \"$@\"\n",
+              "sh",
+              "-ec",
+              "program_path=$(mktemp -d)\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\npython3 -m kfp.v2.components.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+              "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing import *\n\ndef linear_regression_test(\n    linear_regression_model: Input[Model],\n    x_test_artifact: Input[Artifact],\n    y_test_artifact: Input[Artifact]\n)-> NamedTuple(\"Outputs\", [(\"evaluation\", str)]):\n    import joblib\n    from pandas import read_csv\n    from sklearn.metrics import mean_squared_error, mean_absolute_error\n\n    # with open(linear_regression_model.path, 'rb') as f:\n    linear_regressor = joblib.load(linear_regression_model.path)\n    x_test = read_csv(args.x_test)\n    y_test = read_csv(args.y_test)\n\n    y_pred = linear_regressor.predict(x_test)\n\n    mae = mean_absolute_error(y_pred, y_test)\n    mse = mean_squared_error(y_pred, y_test)\n    output_accuracy = f\"\\nLinear Regression\\nMean Absolute Error: {mae}\\nMean Squared Error: {mse}\\n\"\n\n    return(output_accuracy,)\n\n"
+            ],
+            "image": "python:3.8-slim"
+          }
+        },
+        "exec-linear-regression-train": {
+          "container": {
+            "args": [
+              "--executor_input",
+              "{{$}}",
+              "--function_to_execute",
+              "linear_regression_train"
+            ],
+            "command": [
+              "sh",
+              "-c",
+              "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'pandas' 'sklearn' 'fsspec' 'gcsfs' 'kfp==1.8.9' && \"$0\" \"$@\"\n",
+              "sh",
+              "-ec",
+              "program_path=$(mktemp -d)\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\npython3 -m kfp.v2.components.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+              "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing import *\n\ndef linear_regression_train(\n    x_train_artifact: Input[Artifact],\n    y_train_artifact: Input[Artifact],\n    linear_regression_model: Output[Model]\n):\n    import joblib\n    from pandas import read_csv\n    from sklearn.linear_model import LinearRegression\n\n    x_train = read_csv(x_train_artifact.uri)\n    y_train = read_csv(y_train_artifact.uri)\n\n    linear_regressor = LinearRegression()\n    linear_regressor.fit(x_train, y_train)\n\n    # with open(linear_regression_model.path, 'wb') as f:\n    #     pickle.dump(linear_regressor, f)    \n    with open(linear_regression_model.path, 'wb') as f:\n        joblib.dump(linear_regressor, f)\n\n"
+            ],
+            "image": "python:3.8-slim"
+          }
+        }
+      }
+    },
+    "pipelineInfo": {
+      "name": "black-friday"
+    },
+    "root": {
+      "dag": {
+        "tasks": {
+          "clean-data": {
+            "cachingOptions": {
+              "enableCache": true
+            },
+            "componentRef": {
+              "name": "comp-clean-data"
+            },
+            "dependentTasks": [
+              "get-data"
+            ],
+            "inputs": {
+              "artifacts": {
+                "dataset": {
+                  "taskOutputArtifact": {
+                    "outputArtifactKey": "dataset",
+                    "producerTask": "get-data"
+                  }
+                }
+              }
+            },
+            "taskInfo": {
+              "name": "clean-data"
+            }
+          },
+          "feature-scale": {
+            "cachingOptions": {
+              "enableCache": true
+            },
+            "componentRef": {
+              "name": "comp-feature-scale"
+            },
+            "dependentTasks": [
+              "clean-data"
+            ],
+            "inputs": {
+              "artifacts": {
+                "cleaned_data": {
+                  "taskOutputArtifact": {
+                    "outputArtifactKey": "cleaned_data",
+                    "producerTask": "clean-data"
+                  }
+                }
+              }
+            },
+            "taskInfo": {
+              "name": "feature-scale"
+            }
+          },
+          "get-data": {
+            "cachingOptions": {
+              "enableCache": true
+            },
+            "componentRef": {
+              "name": "comp-get-data"
+            },
+            "taskInfo": {
+              "name": "get-data"
+            }
+          },
+          "linear-regression-test": {
+            "cachingOptions": {
+              "enableCache": true
+            },
+            "componentRef": {
+              "name": "comp-linear-regression-test"
+            },
+            "dependentTasks": [
+              "feature-scale",
+              "linear-regression-train"
+            ],
+            "inputs": {
+              "artifacts": {
+                "linear_regression_model": {
+                  "taskOutputArtifact": {
+                    "outputArtifactKey": "x_train_artifact",
+                    "producerTask": "feature-scale"
+                  }
+                },
+                "x_test_artifact": {
+                  "taskOutputArtifact": {
+                    "outputArtifactKey": "y_train_artifact",
+                    "producerTask": "feature-scale"
+                  }
+                },
+                "y_test_artifact": {
+                  "taskOutputArtifact": {
+                    "outputArtifactKey": "linear_regression_model",
+                    "producerTask": "linear-regression-train"
+                  }
+                }
+              }
+            },
+            "taskInfo": {
+              "name": "linear-regression-test"
+            }
+          },
+          "linear-regression-train": {
+            "cachingOptions": {
+              "enableCache": true
+            },
+            "componentRef": {
+              "name": "comp-linear-regression-train"
+            },
+            "dependentTasks": [
+              "feature-scale"
+            ],
+            "inputs": {
+              "artifacts": {
+                "x_train_artifact": {
+                  "taskOutputArtifact": {
+                    "outputArtifactKey": "x_train_artifact",
+                    "producerTask": "feature-scale"
+                  }
+                },
+                "y_train_artifact": {
+                  "taskOutputArtifact": {
+                    "outputArtifactKey": "y_train_artifact",
+                    "producerTask": "feature-scale"
+                  }
+                }
+              }
+            },
+            "taskInfo": {
+              "name": "linear-regression-train"
+            }
+          }
+        }
+      }
+    },
+    "schemaVersion": "2.0.0",
+    "sdkVersion": "kfp-1.8.9"
+  },
+  "runtimeConfig": {
+    "gcsOutputDirectory": "gs://black-friday-demo-bucket/pipeline-root/"
+  }
+}
