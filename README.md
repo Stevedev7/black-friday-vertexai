@@ -1,5 +1,4 @@
 # Blackfriday product price
----
 An end to end machine learning pipeline to predict product price. This pipeline runs on Google Cloud Platform's Vertex AI.
 
 ### Run the pipeline on GCP
@@ -10,4 +9,4 @@ An end to end machine learning pipeline to predict product price. This pipeline 
 1) Upload the dataset in a gs bucket and change the dataset location in the get_data component with your own dataset location.
 1) In line number 16 of deploy component, replace the PROJECT_ID variable with your own project id.
 1) Run the rest of the cells once the kernel restarts. 
-1) Scroll down to the last cell and click on the link in the output box of the last cell to veiw the pipeline.
+1) Scroll down to the last cell and click on the link in the output box of the last cell to veiw the pipeline.git clo
