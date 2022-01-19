@@ -1,6 +1,7 @@
 name: Get data
 outputs:
 - {name: dataset, type: Dataset}
+- {name: Columns, type: Metrics}
 implementation:
   container:
     image: python:3.8-slim
@@ -28,13 +29,16 @@ implementation:
       from typing import *
 
       def get_data(
-          dataset: Output[Dataset]
+          dataset: Output[Dataset],
+          Columns: Output[Metrics]
       ):
           from pandas import read_csv
 
           df = read_csv('gs://black-friday-demo-bucket/dataset/train.csv')
 
           df.to_csv(dataset.uri, index=False)
+
+          Columns.log_metric("columns", str(df.columns.tolist()))
 
     args:
     - --executor_input

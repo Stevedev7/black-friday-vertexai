@@ -27,9 +27,38 @@
                 "schemaVersion": "0.0.1"
               }
             },
+            "dataset_data": {
+              "artifactType": {
+                "schemaTitle": "system.Markdown",
+                "schemaVersion": "0.0.1"
+              }
+            },
             "label_encoder": {
               "artifactType": {
                 "schemaTitle": "system.Artifact",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          }
+        }
+      },
+      "comp-deploy": {
+        "executorLabel": "exec-deploy",
+        "inputDefinitions": {
+          "artifacts": {
+            "Model": {
+              "artifactType": {
+                "schemaTitle": "system.Model",
+                "schemaVersion": "0.0.1"
+              }
+            }
+          }
+        },
+        "outputDefinitions": {
+          "artifacts": {
+            "model": {
+              "artifactType": {
+                "schemaTitle": "system.Model",
                 "schemaVersion": "0.0.1"
               }
             }
@@ -87,6 +116,12 @@
         "executorLabel": "exec-get-data",
         "outputDefinitions": {
           "artifacts": {
+            "Columns": {
+              "artifactType": {
+                "schemaTitle": "system.Metrics",
+                "schemaVersion": "0.0.1"
+              }
+            },
             "dataset": {
               "artifactType": {
                 "schemaTitle": "system.Dataset",
@@ -121,9 +156,18 @@
           }
         },
         "outputDefinitions": {
-          "parameters": {
-            "evaluation": {
-              "type": "STRING"
+          "artifacts": {
+            "MAE": {
+              "artifactType": {
+                "schemaTitle": "system.Metrics",
+                "schemaVersion": "0.0.1"
+              }
+            },
+            "MSE": {
+              "artifactType": {
+                "schemaTitle": "system.Metrics",
+                "schemaVersion": "0.0.1"
+              }
             }
           }
         }
@@ -148,7 +192,7 @@
         },
         "outputDefinitions": {
           "artifacts": {
-            "linear_regression_model": {
+            "model": {
               "artifactType": {
                 "schemaTitle": "system.Model",
                 "schemaVersion": "0.0.1"
@@ -175,7 +219,27 @@
               "sh",
               "-ec",
               "program_path=$(mktemp -d)\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\npython3 -m kfp.v2.components.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
-              "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing import *\n\ndef clean_data(\n    dataset: Input[Dataset],\n    cleaned_data: Output[Artifact],\n    column_transformer: Output[Artifact],\n    label_encoder: Output[Artifact]\n):\n    import numpy as np\n    import pandas as pd\n    from pickle import dump\n    from sklearn.impute import SimpleImputer\n    from sklearn.compose import ColumnTransformer\n    from sklearn.preprocessing import LabelEncoder, OneHotEncoder\n\n    df = pd.read_csv(dataset.uri)\n\n    # Split the data into independent and dependent variables and remove unnecessary columns\n    x = df.iloc[:, 2:-2].values\n    y = df.iloc[:, -1].values\n\n    #Encode Gender column\n    le = LabelEncoder()\n    x[:, 0] = le.fit_transform(x[:, 0])\n\n    # Fill NaN values in Product_Category_2 column \n    imputer = SimpleImputer(missing_values=np.nan, strategy='median')\n    x[:, 7] = imputer.fit_transform(x[:, 7].reshape(-1, 1)).reshape(1, -1)[0]\n\n    # Onehot encode the Age, City_Category, Stay_In_Current_City_Years columns\n    ct = ColumnTransformer(transformers=[('encoder', OneHotEncoder(), [1, 3, 4])], remainder='passthrough')\n    x = ct.fit_transform(x)\n\n    # Merge the dataset to pass it to the next component\n    x = pd.DataFrame(x)\n    y = pd.DataFrame(y)\n    data = pd.concat([x,y], axis=1)\n\n    # Write the data to a csv file\n    data.to_csv(path_or_buf=cleaned_data.path, index=False)\n\n    # Write the column transformer object into a file\n    with open(column_transformer.path, 'wb') as output_file:\n        dump(ct, output_file)\n\n    with open(label_encoder.path, 'wb') as output_file:\n        dump(le, output_file)\n\n"
+              "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing import *\n\ndef clean_data(\n    dataset: Input[Dataset],\n    cleaned_data: Output[Artifact],\n    column_transformer: Output[Artifact],\n    label_encoder: Output[Artifact],\n    dataset_data: Output[Markdown]\n):\n    import json\n    import numpy as np\n    import pandas as pd\n    from pickle import dump\n    from sklearn.impute import SimpleImputer\n    from sklearn.compose import ColumnTransformer\n    from sklearn.preprocessing import LabelEncoder, OneHotEncoder\n\n    df = pd.read_csv(dataset.uri)\n    df.drop(['User_ID', 'Product_ID', 'Product_Category_3'], axis=1, inplace=True)\n    # Split the data into independent and dependent variables and remove unnecessary columns\n    x = df.iloc[:, :-1].values\n    y = df.iloc[:, -1].values\n\n    json_data = json.dumps({\"dataset\":[{_: df[_].unique().tolist()}for _ in df.drop(['Purchase'], axis=1).columns.tolist()]}, indent=4)\n\n    markdown_content = f\"\"\"\n    ```json\n    {json_data}\n\n    ```\n    \"\"\"\n\n    with open(dataset_data.path, 'w') as f:\n        f.write(markdown_content)\n\n    #Encode Gender column\n    le = LabelEncoder()\n    x[:, 0] = le.fit_transform(x[:, 0])\n\n    # Fill NaN values in Product_Category_2 column \n    imputer = SimpleImputer(missing_values=np.nan, strategy='median')\n    x[:, 7] = imputer.fit_transform(x[:, 7].reshape(-1, 1)).reshape(1, -1)[0]\n\n    # Onehot encode the Age, City_Category, Stay_In_Current_City_Years columns\n    ct = ColumnTransformer(transformers=[('encoder', OneHotEncoder(), [1, 3, 4])], remainder='passthrough')\n    x = ct.fit_transform(x)\n\n    # Merge the dataset to pass it to the next component\n    x = pd.DataFrame(x)\n    y = pd.DataFrame(y)\n    data = pd.concat([x,y], axis=1)\n\n    # Write the data to a csv file\n    data.to_csv(path_or_buf=cleaned_data.path, index=False)\n\n    # Write the column transformer object into a file\n    with open(column_transformer.path, 'wb') as output_file:\n        dump(ct, output_file)\n\n    with open(label_encoder.path, 'wb') as output_file:\n        dump(le, output_file)\n\n"
+            ],
+            "image": "python:3.8-slim"
+          }
+        },
+        "exec-deploy": {
+          "container": {
+            "args": [
+              "--executor_input",
+              "{{$}}",
+              "--function_to_execute",
+              "deploy"
+            ],
+            "command": [
+              "sh",
+              "-c",
+              "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip || python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1 python3 -m pip install --quiet     --no-warn-script-location 'google-cloud-aiplatform' 'sklearn' 'kfp==1.8.9' && \"$0\" \"$@\"\n",
+              "sh",
+              "-ec",
+              "program_path=$(mktemp -d)\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\npython3 -m kfp.v2.components.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
+              "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing import *\n\ndef deploy(\n    Model: Input[Model],\n    model: Output[Model]\n):\n    from google.cloud import aiplatform\n    import time\n\n    TIME_STAMP = str(int(time.time()))\n    DISPLAY_NAME = f\"blackfriday-price-prediction-{TIME_STAMP}\"\n    MODEL_NAME = f\"black-friday-model-{TIME_STAMP}\"\n    ENDPOINT_NAME = f\"black-friday-endpoint-{TIME_STAMP}\"\n    PROJECT = 'niveustraining'\n    REGION = 'us-central1'\n\n    aiplatform.init(project=PROJECT, location=REGION)\n\n    endpoint = aiplatform.Endpoint.create(\n            display_name=ENDPOINT_NAME, project=PROJECT, location=REGION\n    )\n\n    model_upload = aiplatform.Model.upload(\n        display_name=DISPLAY_NAME,\n        artifact_uri=Model.uri.replace(\"model\", \"\"),\n        serving_container_image_uri=\"us-docker.pkg.dev/vertex-ai/prediction/sklearn-cpu.0-24:latest\",\n        serving_container_health_route=f\"/v1/models/{MODEL_NAME}\",\n        serving_container_predict_route=f\"/v1/models/{MODEL_NAME}:predict\",\n        serving_container_environment_variables={\n            \"MODEL_NAME\": MODEL_NAME,\n        }\n    )\n\n    model_deploy = model_upload.deploy(\n        machine_type=\"n1-standard-4\", \n        endpoint=endpoint,\n        traffic_split={\"0\": 100},\n        deployed_model_display_name=DISPLAY_NAME,\n    )\n\n    # Save data to the output params\n    model.uri = model_deploy.resource_name\n\n"
             ],
             "image": "python:3.8-slim"
           }
@@ -215,7 +279,7 @@
               "sh",
               "-ec",
               "program_path=$(mktemp -d)\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\npython3 -m kfp.v2.components.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
-              "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing import *\n\ndef get_data(\n    dataset: Output[Dataset]\n):\n    from pandas import read_csv\n\n    df = read_csv('gs://black-friday-demo-bucket/dataset/train.csv')\n\n    df.to_csv(dataset.uri, index=False)\n\n"
+              "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing import *\n\ndef get_data(\n    dataset: Output[Dataset],\n    Columns: Output[Metrics]\n):\n    from pandas import read_csv\n\n    df = read_csv('gs://black-friday-demo-bucket/dataset/train.csv')\n\n    df.to_csv(dataset.uri, index=False)\n\n    Columns.log_metric(\"columns\", str(df.columns.tolist()))\n\n"
             ],
             "image": "python:3.8-slim"
           }
@@ -235,7 +299,7 @@
               "sh",
               "-ec",
               "program_path=$(mktemp -d)\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\npython3 -m kfp.v2.components.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
-              "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing import *\n\ndef linear_regression_test(\n    linear_regression_model: Input[Model],\n    x_test_artifact: Input[Artifact],\n    y_test_artifact: Input[Artifact]\n)-> NamedTuple(\"Outputs\", [(\"evaluation\", str)]):\n    import joblib\n    from pandas import read_csv\n    from sklearn.metrics import mean_squared_error, mean_absolute_error\n\n    # with open(linear_regression_model.path, 'rb') as f:\n    linear_regressor = joblib.load(linear_regression_model.path)\n    x_test = read_csv(args.x_test)\n    y_test = read_csv(args.y_test)\n\n    y_pred = linear_regressor.predict(x_test)\n\n    mae = mean_absolute_error(y_pred, y_test)\n    mse = mean_squared_error(y_pred, y_test)\n    output_accuracy = f\"\\nLinear Regression\\nMean Absolute Error: {mae}\\nMean Squared Error: {mse}\\n\"\n\n    return(output_accuracy,)\n\n"
+              "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing import *\n\ndef linear_regression_test(\n    linear_regression_model: Input[Model],\n    x_test_artifact: Input[Artifact],\n    y_test_artifact: Input[Artifact],\n    MSE: Output[Metrics],\n    MAE: Output[Metrics]\n):\n    import pickle\n    from pandas import read_csv\n    from sklearn.metrics import mean_squared_error, mean_absolute_error\n\n    with open(linear_regression_model.path + '.pkl', 'rb') as f:\n        linear_regressor = pickle.load(f)\n\n    x_test = read_csv(x_test_artifact.uri)\n    y_test = read_csv(y_test_artifact.uri)\n\n    y_pred = linear_regressor.predict(x_test)\n\n    mae = mean_absolute_error(y_pred, y_test)\n    mse = mean_squared_error(y_pred, y_test)\n    output_accuracy = f\"\\nLinear Regression\\nMean Absolute Error: {mae}\\nMean Squared Error: {mse}\\n\"\n\n    MSE.log_metric(\"Mean Squared Error\", float(mse))    \n    MAE.log_metric(\"Mean Absolute Error\", float(mae))\n\n    linear_regression_model.metadata[\"Mean Squared Error\"] = float(mse)    \n    linear_regression_model.metadata[\"Mean Absolute Error\"] = float(mae)\n\n"
             ],
             "image": "python:3.8-slim"
           }
@@ -255,7 +319,7 @@
               "sh",
               "-ec",
               "program_path=$(mktemp -d)\nprintf \"%s\" \"$0\" > \"$program_path/ephemeral_component.py\"\npython3 -m kfp.v2.components.executor_main                         --component_module_path                         \"$program_path/ephemeral_component.py\"                         \"$@\"\n",
-              "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing import *\n\ndef linear_regression_train(\n    x_train_artifact: Input[Artifact],\n    y_train_artifact: Input[Artifact],\n    linear_regression_model: Output[Model]\n):\n    import joblib\n    from pandas import read_csv\n    from sklearn.linear_model import LinearRegression\n\n    x_train = read_csv(x_train_artifact.uri)\n    y_train = read_csv(y_train_artifact.uri)\n\n    linear_regressor = LinearRegression()\n    linear_regressor.fit(x_train, y_train)\n\n    # with open(linear_regression_model.path, 'wb') as f:\n    #     pickle.dump(linear_regressor, f)    \n    with open(linear_regression_model.path, 'wb') as f:\n        joblib.dump(linear_regressor, f)\n\n"
+              "\nimport kfp\nfrom kfp.v2 import dsl\nfrom kfp.v2.dsl import *\nfrom typing import *\n\ndef linear_regression_train(\n    x_train_artifact: Input[Artifact],\n    y_train_artifact: Input[Artifact],\n    model: Output[Model]\n):\n    import pickle\n    from pandas import read_csv\n    from sklearn.linear_model import LinearRegression\n\n    x_train = read_csv(x_train_artifact.uri)\n    y_train = read_csv(y_train_artifact.uri)\n\n    linear_regressor = LinearRegression()\n    linear_regressor.fit(x_train, y_train)\n\n    # with open(linear_regression_model.path, 'wb') as f:\n    #     pickle.dump(linear_regressor, f)    \n    with open(model.path + '.pkl', 'wb') as f:\n        pickle.dump(linear_regressor, f)\n\n"
             ],
             "image": "python:3.8-slim"
           }
@@ -267,6 +331,34 @@
     },
     "root": {
       "dag": {
+        "outputs": {
+          "artifacts": {
+            "get-data-Columns": {
+              "artifactSelectors": [
+                {
+                  "outputArtifactKey": "Columns",
+                  "producerSubtask": "get-data"
+                }
+              ]
+            },
+            "linear-regression-test-MAE": {
+              "artifactSelectors": [
+                {
+                  "outputArtifactKey": "MAE",
+                  "producerSubtask": "linear-regression-test"
+                }
+              ]
+            },
+            "linear-regression-test-MSE": {
+              "artifactSelectors": [
+                {
+                  "outputArtifactKey": "MSE",
+                  "producerSubtask": "linear-regression-test"
+                }
+              ]
+            }
+          }
+        },
         "tasks": {
           "clean-data": {
             "cachingOptions": {
@@ -290,6 +382,30 @@
             },
             "taskInfo": {
               "name": "clean-data"
+            }
+          },
+          "deploy": {
+            "cachingOptions": {
+              "enableCache": true
+            },
+            "componentRef": {
+              "name": "comp-deploy"
+            },
+            "dependentTasks": [
+              "linear-regression-train"
+            ],
+            "inputs": {
+              "artifacts": {
+                "Model": {
+                  "taskOutputArtifact": {
+                    "outputArtifactKey": "model",
+                    "producerTask": "linear-regression-train"
+                  }
+                }
+              }
+            },
+            "taskInfo": {
+              "name": "deploy"
             }
           },
           "feature-scale": {
@@ -342,20 +458,20 @@
               "artifacts": {
                 "linear_regression_model": {
                   "taskOutputArtifact": {
-                    "outputArtifactKey": "x_train_artifact",
-                    "producerTask": "feature-scale"
+                    "outputArtifactKey": "model",
+                    "producerTask": "linear-regression-train"
                   }
                 },
                 "x_test_artifact": {
                   "taskOutputArtifact": {
-                    "outputArtifactKey": "y_train_artifact",
+                    "outputArtifactKey": "x_train_artifact",
                     "producerTask": "feature-scale"
                   }
                 },
                 "y_test_artifact": {
                   "taskOutputArtifact": {
-                    "outputArtifactKey": "linear_regression_model",
-                    "producerTask": "linear-regression-train"
+                    "outputArtifactKey": "y_train_artifact",
+                    "producerTask": "feature-scale"
                   }
                 }
               }
@@ -392,6 +508,28 @@
             },
             "taskInfo": {
               "name": "linear-regression-train"
+            }
+          }
+        }
+      },
+      "outputDefinitions": {
+        "artifacts": {
+          "get-data-Columns": {
+            "artifactType": {
+              "schemaTitle": "system.Metrics",
+              "schemaVersion": "0.0.1"
+            }
+          },
+          "linear-regression-test-MAE": {
+            "artifactType": {
+              "schemaTitle": "system.Metrics",
+              "schemaVersion": "0.0.1"
+            }
+          },
+          "linear-regression-test-MSE": {
+            "artifactType": {
+              "schemaTitle": "system.Metrics",
+              "schemaVersion": "0.0.1"
             }
           }
         }
