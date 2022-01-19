@@ -38,8 +38,8 @@ implementation:
       \    y = df.iloc[:, -1].values\n\n    json_data = json.dumps({\"dataset\":[{_:\
       \ df[_].unique().tolist()}for _ in df.drop(['Purchase'], axis=1).columns.tolist()]},\
       \ indent=4)\n\n    markdown_content = f\"\"\"\n    ```json\n    {json_data}\n\
-      \n    ```\n    \"\"\"\n\n    with open(dataset_data.path, 'w') as f:\n     \
-      \   f.write(markdown_content)\n\n    #Encode Gender column\n    le = LabelEncoder()\n\
+      \    ```\n    \"\"\"\n\n    with open(dataset_data.path, 'w') as f:\n      \
+      \  f.write(markdown_content)\n\n    #Encode Gender column\n    le = LabelEncoder()\n\
       \    x[:, 0] = le.fit_transform(x[:, 0])\n\n    # Fill NaN values in Product_Category_2\
       \ column \n    imputer = SimpleImputer(missing_values=np.nan, strategy='median')\n\
       \    x[:, 7] = imputer.fit_transform(x[:, 7].reshape(-1, 1)).reshape(1, -1)[0]\n\
